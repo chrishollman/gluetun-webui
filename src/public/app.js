@@ -76,6 +76,7 @@ function buildDashboardGroup(inst) {
       <div class="banner-actions">
         <button id="i${id}-btn-start" class="btn-success">&#9654; Start</button>
         <button id="i${id}-btn-stop" class="btn-danger">&#9209; Stop</button>
+        <button id="i${id}-btn-reconnect" class="btn-primary">&#x21bb; Reconnect</button>
       </div>
     </div>
 
@@ -152,6 +153,7 @@ function buildDashboardGroup(inst) {
   `;
   group.querySelector(`#i${id}-btn-start`).addEventListener('click', () => vpnAction(id, 'start'));
   group.querySelector(`#i${id}-btn-stop`).addEventListener('click', () => vpnAction(id, 'stop'));
+  group.querySelector(`#i${id}-btn-reconnect`).addEventListener('click', () => vpnAction(id, 'restart'));
   return group;
 }
 
@@ -285,13 +287,18 @@ async function pollAll() {
 async function vpnAction(instanceId, action) {
   const inst  = instances.find(i => i.id === instanceId);
   const name  = inst?.name ?? instanceId;
-  const label = action === 'start' ? 'Starting' : 'Stopping';
+  const label = action === 'start' ? 'Starting'
+    : action === 'stop' ? 'Stopping'
+    : 'Reconnecting';
+  const successLabel = action === 'restart'
+    ? 'VPN reconnect command sent'
+    : `VPN ${action} command sent`;
   showToast(`${label} ${name}…`, 'info', 5000);
   try {
     const res  = await fetch(`/api/${instanceId}/vpn/${action}`, { method: 'PUT' });
     const data = await res.json();
     if (data.ok) {
-      showToast(`${name}: VPN ${action} command sent`, 'success');
+      showToast(`${name}: ${successLabel}`, 'success');
       setTimeout(async () => { await pollAll(); scheduleNextPoll(); }, 2000);
     } else {
       showToast(`${name}: ${data.error ?? 'Unknown error'}`, 'error', 5000);
