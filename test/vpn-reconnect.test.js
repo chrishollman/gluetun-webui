@@ -79,6 +79,18 @@ async function waitForApp(port) {
   throw lastError || new Error('Timed out waiting for app');
 }
 
+function stopChild(child) {
+  return new Promise(resolve => {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      resolve();
+      return;
+    }
+    child.once('exit', resolve);
+    child.once('error', resolve);
+    child.kill();
+  });
+}
+
 async function startApp(upstreamPort) {
   const port = await getFreePort();
   const child = spawn(process.execPath, ['src/server.js'], {
@@ -91,66 +103,83 @@ async function startApp(upstreamPort) {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
-  await waitForApp(port);
+  try {
+    await waitForApp(port);
+  } catch (error) {
+    await stopChild(child);
+    throw error;
+  }
 
   return {
     port,
-    close: () => new Promise((resolve, reject) => {
-      child.once('exit', resolve);
-      child.once('error', reject);
-      child.kill();
-    }),
+    close: () => stopChild(child),
   };
+}
+
+function assertVpnStatusRequests(requests) {
+  for (const request of requests) {
+    assert.equal(request.method, 'PUT');
+    assert.equal(request.pathname, '/v1/vpn/status');
+  }
 }
 
 test('per-instance restart stops before starting', async () => {
   const upstream = createMockGluetun();
-  const upstreamAddress = await listen(upstream.server);
-  const app = await startApp(upstreamAddress.port);
+  let upstreamAddress;
+  let app;
   try {
+    upstreamAddress = await listen(upstream.server);
+    app = await startApp(upstreamAddress.port);
     const response = await fetch(`http://127.0.0.1:${app.port}/api/1/vpn/restart`, { method: 'PUT' });
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { ok: true, data: { ok: true, status: 'running' } });
+    assertVpnStatusRequests(upstream.requests);
     assert.deepEqual(upstream.requests.map(r => r.body), [
       { status: 'stopped' },
       { status: 'running' },
     ]);
   } finally {
-    await app.close();
-    await upstreamAddress.close();
+    await app?.close();
+    await upstreamAddress?.close();
   }
 });
 
 test('restart does not start when stop fails', async () => {
   const upstream = createMockGluetun({ failAt: 0 });
-  const upstreamAddress = await listen(upstream.server);
-  const app = await startApp(upstreamAddress.port);
+  let upstreamAddress;
+  let app;
   try {
+    upstreamAddress = await listen(upstream.server);
+    app = await startApp(upstreamAddress.port);
     const response = await fetch(`http://127.0.0.1:${app.port}/api/vpn/restart`, { method: 'PUT' });
     assert.equal(response.status, 502);
     assert.deepEqual(await response.json(), { ok: false, error: 'Upstream error' });
+    assertVpnStatusRequests(upstream.requests);
     assert.equal(upstream.requests.length, 1);
     assert.deepEqual(upstream.requests[0].body, { status: 'stopped' });
   } finally {
-    await app.close();
-    await upstreamAddress.close();
+    await app?.close();
+    await upstreamAddress?.close();
   }
 });
 
 test('restart returns an upstream error when start fails', async () => {
   const upstream = createMockGluetun({ failAt: 1 });
-  const upstreamAddress = await listen(upstream.server);
-  const app = await startApp(upstreamAddress.port);
+  let upstreamAddress;
+  let app;
   try {
+    upstreamAddress = await listen(upstream.server);
+    app = await startApp(upstreamAddress.port);
     const response = await fetch(`http://127.0.0.1:${app.port}/api/1/vpn/restart`, { method: 'PUT' });
     assert.equal(response.status, 502);
     assert.deepEqual(await response.json(), { ok: false, error: 'Upstream error' });
+    assertVpnStatusRequests(upstream.requests);
     assert.deepEqual(upstream.requests.map(r => r.body), [
       { status: 'stopped' },
       { status: 'running' },
     ]);
   } finally {
-    await app.close();
-    await upstreamAddress.close();
+    await app?.close();
+    await upstreamAddress?.close();
   }
 });
