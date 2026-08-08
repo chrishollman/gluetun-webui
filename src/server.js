@@ -263,21 +263,29 @@ const staticLimiter = rateLimit({
 });
 
 // --- Per-instance VPN control ---
+async function performVpnAction(instance, action) {
+  if (action === 'restart') {
+    await gluetunFetch(instance, '/v1/vpn/status', 'PUT', { status: 'stopped' });
+    return gluetunFetch(instance, '/v1/vpn/status', 'PUT', { status: 'running' });
+  }
+  return gluetunFetch(
+    instance,
+    '/v1/vpn/status',
+    'PUT',
+    { status: action === 'start' ? 'running' : 'stopped' }
+  );
+}
+
 app.put('/api/:instanceId/vpn/:action', vpnActionLimiter, async (req, res) => {
   const instance = resolveInstance(req.params.instanceId);
   if (!instance) return res.status(400).json({ ok: false, error: 'Unknown instance ID' });
   const { action } = req.params;
-  const allowed = ['start', 'stop'];
+  const allowed = ['start', 'stop', 'restart'];
   if (!allowed.includes(action)) {
-    return res.status(400).json({ ok: false, error: 'Invalid action. Use start or stop.' });
+    return res.status(400).json({ ok: false, error: 'Invalid action. Use start, stop, or restart.' });
   }
   try {
-    const data = await gluetunFetch(
-      instance,
-      '/v1/vpn/status',
-      'PUT',
-      { status: action === 'start' ? 'running' : 'stopped' }
-    );
+    const data = await performVpnAction(instance, action);
     res.json({ ok: true, data });
   } catch (err) {
     console.error(`[upstream][${instance.id}]`, err.message);
@@ -288,17 +296,12 @@ app.put('/api/:instanceId/vpn/:action', vpnActionLimiter, async (req, res) => {
 // --- Legacy VPN control (instance 1) ---
 app.put('/api/vpn/:action', vpnActionLimiter, async (req, res) => {
   const { action } = req.params;
-  const allowed = ['start', 'stop'];
+  const allowed = ['start', 'stop', 'restart'];
   if (!allowed.includes(action)) {
-    return res.status(400).json({ ok: false, error: 'Invalid action. Use start or stop.' });
+    return res.status(400).json({ ok: false, error: 'Invalid action. Use start, stop, or restart.' });
   }
   try {
-    const data = await gluetunFetch(
-      instances[0],
-      '/v1/vpn/status',
-      'PUT',
-      { status: action === 'start' ? 'running' : 'stopped' }
-    );
+    const data = await performVpnAction(instances[0], action);
     res.json({ ok: true, data });
   } catch (err) {
     console.error('[upstream]', err.message);
