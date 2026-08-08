@@ -7,11 +7,13 @@ const app = express();
 app.set('trust proxy', process.env.TRUST_PROXY === 'true');
 app.disable('x-powered-by');
 const PORT = process.env.PORT || 3000;
+const DOCKER_SECRETS_DIR = process.env.GLUETUN_SECRETS_DIR || '/run/secrets';
 
 // --- Docker Secrets Support ---
-// Try to read from /run/secrets/ (Docker Swarm/Compose secrets), fall back to env vars
+// Try to read from the configurable Docker secrets directory, fall back to env vars.
+// Production defaults to /run/secrets/ (Docker Swarm/Compose secrets).
 function getConfigValue(envVar, secretName = null) {
-  const secretPath = `/run/secrets/${secretName || envVar.toLowerCase()}`;
+  const secretPath = path.join(DOCKER_SECRETS_DIR, secretName || envVar.toLowerCase());
   try {
     if (fs.existsSync(secretPath)) {
       return fs.readFileSync(secretPath, 'utf8').trim();

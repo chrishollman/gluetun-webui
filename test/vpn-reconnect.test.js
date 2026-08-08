@@ -1,7 +1,10 @@
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
+const fs = require('node:fs/promises');
 const http = require('node:http');
 const net = require('node:net');
+const os = require('node:os');
+const path = require('node:path');
 const { test } = require('node:test');
 
 function createMockGluetun({ failAt = -1 } = {}) {
@@ -93,13 +96,15 @@ function stopChild(child) {
 
 async function startApp(upstreamPort) {
   const port = await getFreePort();
-  const path = process.env.PATH;
+  const executablePath = process.env.PATH;
+  const secretsDir = await fs.mkdtemp(path.join(os.tmpdir(), 'gluetun-webui-secrets-'));
   const child = spawn(process.execPath, ['src/server.js'], {
     cwd: process.cwd(),
     env: {
-      ...(path ? { PATH: path } : {}),
+      ...(executablePath ? { PATH: executablePath } : {}),
       PORT: String(port),
       GLUETUN_CONTROL_URL: `http://127.0.0.1:${upstreamPort}`,
+      GLUETUN_SECRETS_DIR: secretsDir,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -108,12 +113,19 @@ async function startApp(upstreamPort) {
     await waitForApp(port);
   } catch (error) {
     await stopChild(child);
+    await fs.rm(secretsDir, { recursive: true, force: true });
     throw error;
   }
 
   return {
     port,
-    close: () => stopChild(child),
+    close: async () => {
+      try {
+        await stopChild(child);
+      } finally {
+        await fs.rm(secretsDir, { recursive: true, force: true });
+      }
+    },
   };
 }
 
