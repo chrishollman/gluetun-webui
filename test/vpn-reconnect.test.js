@@ -93,10 +93,11 @@ function stopChild(child) {
 
 async function startApp(upstreamPort) {
   const port = await getFreePort();
+  const path = process.env.PATH;
   const child = spawn(process.execPath, ['src/server.js'], {
     cwd: process.cwd(),
     env: {
-      ...process.env,
+      ...(path ? { PATH: path } : {}),
       PORT: String(port),
       GLUETUN_CONTROL_URL: `http://127.0.0.1:${upstreamPort}`,
     },
@@ -131,6 +132,27 @@ test('per-instance restart stops before starting', async () => {
     upstreamAddress = await listen(upstream.server);
     app = await startApp(upstreamAddress.port);
     const response = await fetch(`http://127.0.0.1:${app.port}/api/1/vpn/restart`, { method: 'PUT' });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { ok: true, data: { ok: true, status: 'running' } });
+    assertVpnStatusRequests(upstream.requests);
+    assert.deepEqual(upstream.requests.map(r => r.body), [
+      { status: 'stopped' },
+      { status: 'running' },
+    ]);
+  } finally {
+    await app?.close();
+    await upstreamAddress?.close();
+  }
+});
+
+test('legacy restart stops before starting', async () => {
+  const upstream = createMockGluetun();
+  let upstreamAddress;
+  let app;
+  try {
+    upstreamAddress = await listen(upstream.server);
+    app = await startApp(upstreamAddress.port);
+    const response = await fetch(`http://127.0.0.1:${app.port}/api/vpn/restart`, { method: 'PUT' });
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { ok: true, data: { ok: true, status: 'running' } });
     assertVpnStatusRequests(upstream.requests);

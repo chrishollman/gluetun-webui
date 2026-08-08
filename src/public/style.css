@@ -141,6 +141,8 @@ main {
 #banner-sub   { font-size: 0.82rem; }
 
 .banner-actions { display: flex; gap: 0.5rem; }
+.btn-primary { border-color: var(--blue); color: var(--blue); }
+.btn-primary:hover { background: rgba(96,165,250,0.15); }
 .btn-success { border-color: var(--green); color: var(--green); }
 .btn-success:hover { background: rgba(74,222,128,0.15); }
 .btn-danger  { border-color: var(--red); color: var(--red); }
